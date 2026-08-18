@@ -1,0 +1,15 @@
+[Unit]
+Description=Smart Bird Feeder Pipeline (Pi 3B)
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/bird-feeder-raspberry-pi
+ExecStart=/home/pi/bird-feeder-raspberry-pi/venv/bin/python src/main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

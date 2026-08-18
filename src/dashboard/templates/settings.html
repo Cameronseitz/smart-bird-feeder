@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Settings - Bird Feeder{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold text-gray-800 mb-6">Settings & Tuning</h1>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h3 class="font-semibold mb-4"><i class="fas fa-sliders-h mr-2"></i>Pipeline Thresholds (from config.py)</h3>
+        <form id="settingsForm" class="space-y-4">
+            <div>
+                <label class="text-sm text-gray-600">Detection Threshold (>70% per spec)</label>
+                <input type="number" id="detThresh" step="0.05" min="0" max="1" value="{{ config.detection_threshold }}" class="w-full border rounded px-3 py-2">
+                <p class="text-xs text-gray-400 mt-1">Stage 2 bird detector gate. Lower raises recall but more false triggers → slower on Pi 3.</p>
+            </div>
+            <div>
+                <label class="text-sm text-gray-600">Species Confidence Threshold (85-90% recommended)</label>
+                <input type="number" id="speciesThresh" step="0.05" min="0" max="1" value="{{ config.species_threshold }}" class="w-full border rounded px-3 py-2">
+                <p class="text-xs text-gray-400 mt-1">Below this logs as "unknown" to avoid overconfident wrong species.</p>
+            </div>
+            <div>
+                <label class="text-sm text-gray-600">Grace Period sec (3-5s debounce)</label>
+                <input type="number" id="grace" step="0.5" min="1" max="10" value="{{ config.grace_period }}" class="w-full border rounded px-3 py-2">
+                <p class="text-xs text-gray-400 mt-1">Session ends after X sec no detection. Shorter reduces merge risk in high traffic.</p>
+            </div>
+            <div>
+                <label class="text-sm text-gray-600">Motion Threshold (pixel diff)</label>
+                <input type="number" id="motionThresh" step="1" value="{{ config.motion_threshold }}" class="w-full border rounded px-3 py-2">
+                <p class="text-xs text-gray-400 mt-1">Stage 1 low-res frame diff gate at 320x240.</p>
+            </div>
+            <button type="button" onclick="saveSettings()" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">Save (persists to API, edit config.py for reboot)</button>
+        </form>
+        <div id="saveStatus" class="mt-3 text-xs"></div>
+    </div>
+
+    <div class="space-y-6">
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="font-semibold mb-4">Hardware Info</h3>
+            <ul class="text-sm space-y-2">
+                <li><strong>Compute:</strong> Pi 3 Model B v1.2, 1.2GHz Quad A53, 1GB LPDDR2, Wi-Fi</li>
+                <li><strong>Camera:</strong> Module 3 standard FOV, IMX708 12MP, AF (verify 15-pin cable for Pi3)</li>
+                <li><strong>Power:</strong> 5V/2.5A micro-USB valid only if window-side (blueprint Sec 6)</li>
+                <li><strong>Enclosure:</strong> PETG/ASA weatherproof, sealed electronics, optical dome</li>
+                <li><strong>Inference:</strong> ~600ms-1.2s per SSD detect on bare Pi3 CPU (no Hailo/Coral)</li>
+            </ul>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="font-semibold mb-4">Model Management</h3>
+            <p class="text-xs text-gray-500 mb-3">Models expected in <code>models/</code>. Download via:</p>
+            <pre class="bg-gray-900 text-green-400 p-3 rounded text-xs overflow-auto">python scripts/download_models.py
+# downloads:
+#  ssd_mobilenet_v2_coco_quant.tflite
+#  coco_labels.txt
+#  birds_V1_3.tflite (AIY 964 classes)
+#  aiy_birds_V1_3_labels.txt</pre>
+            <div class="mt-4 flex gap-2">
+                <a href="/api/health" class="px-3 py-2 bg-blue-50 text-blue-600 rounded text-xs">Health check</a>
+                <a href="/api/stats" class="px-3 py-2 bg-blue-50 text-blue-600 rounded text-xs">Stats JSON</a>
+            </div>
+        </div>
+
+        <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+            <h3 class="font-semibold text-yellow-800 mb-2">Open Action Items (Blueprint Sec 9)</h3>
+            <ol class="text-xs list-decimal list-inside space-y-1 text-yellow-900">
+                <li>Confirm Module3 cable 15-pin vs 22-pin adapter</li>
+                <li>Verify min focus distance vs perch</li>
+                <li>Pull species label map & cross-check Atlanta species (automated in SpeciesClassifier logs coverage)</li>
+                <li>Decide window vs fence (Wi-Fi test via <code>scripts/wifi_test.py</code>)</li>
+                <li>If fence, scope power / weatherproofing</li>
+                <li>Tune grace & thresholds empirically once running</li>
+            </ol>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function saveSettings(){
+    const payload = {
+        detection_threshold: parseFloat(document.getElementById('detThresh').value),
+        species_confidence_threshold: parseFloat(document.getElementById('speciesThresh').value),
+        grace_period: parseFloat(document.getElementById('grace').value),
+        motion_threshold: parseInt(document.getElementById('motionThresh').value)
+    };
+    const res = await fetch('/api/settings',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await res.json();
+    document.getElementById('saveStatus').textContent = 'Saved: ' + JSON.stringify(data.received) + ' (update config.py to persist across restart)';
+}
+</script>
+{% endblock %}

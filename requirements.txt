@@ -1,0 +1,30 @@
+# Core Pi 3B dependencies
+# Pi OS 64-bit should have picamera2 via apt; opencv also available via apt as python3-opencv
+# Using venv: pip install these after system packages
+
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# TFLite - prefer tflite-runtime for Pi 3, fallback to tensorflow-lite in code
+tflite-runtime>=2.14.0 ; platform_machine == "aarch64" or platform_machine == "armv7l"
+# If tflite-runtime not available, use:
+# tensorflow==2.14.0  # heavy (~400MB) but includes Interpreter, only if needed
+
+Flask>=2.3.0
+Flask-Cors>=4.0.0
+
+# Optional: picamera2 - install via apt normally, but pip backup:
+# picamera2
+# libcamera
+
+# Optional cloud fallback (descoped but left for optional second pass)
+requests>=2.31.0
+httpx>=0.24.0
+
+# Ultralytics YOLOv8 Nano optional (if you want detection alt route)
+# ultralytics>=8.0.0
+# torch -- use pi-specific wheel, heavy on Pi 3, not recommended
+
+# Utility
+python-dotenv>=1.0.0

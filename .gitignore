@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+*.egg-info/
+.env
+
+# Pi assets & data (keep dir but ignore contents)
+data/*.db
+data/*.sqlite
+assets/captures/*
+assets/best/*
+assets/latest.jpg
+!assets/captures/.gitkeep
+!assets/best/.gitkeep
+models/*.tflite
+models/*.zip
+!models/.gitkeep
+
+# Test images
+test_*.jpg
+test_bird.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

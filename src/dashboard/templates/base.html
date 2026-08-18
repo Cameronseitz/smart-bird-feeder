@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Smart Bird Feeder{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-green-50 to-blue-50 min-h-screen">
+    <nav class="bg-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-feather text-green-600 text-2xl mr-3"></i>
+                    <span class="font-bold text-xl text-gray-800">Smart Bird Feeder v2</span>
+                    <span class="ml-3 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Pi 3B • Local AI</span>
+                </div>
+                <div class="flex items-center space-x-1 sm:space-x-4">
+                    <a href="/" class="px-3 py-2 rounded-md text-sm font-medium {% if request.path == '/' %}bg-green-100 text-green-800{% else %}text-gray-600 hover:bg-gray-100{% endif %}"><i class="fas fa-home mr-1"></i> Live</a>
+                    <a href="/gallery" class="px-3 py-2 rounded-md text-sm font-medium {% if '/gallery' in request.path %}bg-green-100 text-green-800{% else %}text-gray-600 hover:bg-gray-100{% endif %}"><i class="fas fa-images mr-1"></i> Gallery</a>
+                    <a href="/analytics" class="px-3 py-2 rounded-md text-sm font-medium {% if '/analytics' in request.path %}bg-green-100 text-green-800{% else %}text-gray-600 hover:bg-gray-100{% endif %}"><i class="fas fa-chart-bar mr-1"></i> Analytics</a>
+                    <a href="/settings" class="px-3 py-2 rounded-md text-sm font-medium {% if '/settings' in request.path %}bg-green-100 text-green-800{% else %}text-gray-600 hover:bg-gray-100{% endif %}"><i class="fas fa-cog mr-1"></i> Settings</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-white border-t mt-12">
+        <div class="max-w-7xl mx-auto px-4 py-6 text-center text-sm text-gray-500">
+            <p>Smart AI Bird Feeder • Raspberry Pi 3 Model B + Camera Module 3 • Two-stage pipeline: Motion → Bird Det → IoU Tracking → Best-Frame → Species (AIY 964)</p>
+            <p class="mt-1">Local TFLite inference • No cloud dependency • Atlanta backyard tuned</p>
+        </div>
+    </footer>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

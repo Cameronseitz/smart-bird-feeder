@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Analytics - Bird Feeder{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold text-gray-800 mb-6">Visit Analytics</h1>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h3 class="font-semibold mb-4">Visits by Hour (peak times)</h3>
+        <canvas id="hourChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h3 class="font-semibold mb-4">Species Frequency</h3>
+        <canvas id="speciesChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h3 class="font-semibold mb-4">Last 7 Days</h3>
+        <canvas id="dailyChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h3 class="font-semibold mb-4">Summary Stats</h3>
+        <div class="space-y-3 text-sm">
+            <div class="flex justify-between border-b pb-2"><span>Total visits</span><strong>{{ stats.total_visits }}</strong></div>
+            <div class="flex justify-between border-b pb-2"><span>Unknown / low-conf count</span><strong>{{ stats.unknown_count }} ({{ "%.1f"|format(stats.unknown_rate*100) }}%)</strong></div>
+            <div class="flex justify-between border-b pb-2"><span>Species observed (confident)</span><strong>{{ stats.species_frequency|length }}</strong></div>
+            <div class="mt-4 text-xs text-gray-500">
+                <p>Confidence threshold: 85-90% avoids false labels from species classifier which has no "not bird" output (per blueprint Section 3). Object detector gate (SSD >70%) already filters non-bird motion.</p>
+                <p class="mt-2">Best-frame scoring: sharpness weight 0.5, size 0.35, position 0.15. Edge clip margin 5%. Grace 3-5s IoU tracking prevents recounting same bird but may merge high-traffic turnover—tune grace shorter if merges seen.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-6 bg-white rounded-xl shadow-lg p-6">
+    <h3 class="font-semibold mb-4">Raw Stats JSON</h3>
+    <pre id="statsJson" class="bg-gray-50 p-4 rounded text-xs overflow-auto max-h-96">{{ stats | tojson(indent=2) }}</pre>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const stats = {{ stats | tojson }};
+
+const hourLabels = stats.hourly_distribution.map(d => d.hour + ':00');
+const hourData = stats.hourly_distribution.map(d => d.count);
+new Chart(document.getElementById('hourChart'), {
+    type: 'bar',
+    data: {labels: hourLabels, datasets:[{label:'Visits', data: hourData, backgroundColor:'rgba(34,197,94,0.6)', borderColor:'rgba(34,197,94,1)', borderWidth:1}]},
+    options:{responsive:true, scales:{y:{beginAtZero:true}}}
+});
+
+const speciesLabels = stats.species_frequency.map(s => s.species);
+const speciesCounts = stats.species_frequency.map(s => s.count);
+new Chart(document.getElementById('speciesChart'), {
+    type: 'doughnut',
+    data: {labels: speciesLabels, datasets:[{data: speciesCounts, backgroundColor:['#22c55e','#3b82f6','#eab308','#a855f7','#ef4444','#06b6d4','#f97316','#84cc16']}]},
+    options:{responsive:true}
+});
+
+const dailyLabels = stats.daily_last_7.map(d => d.day);
+const dailyData = stats.daily_last_7.map(d => d.count);
+new Chart(document.getElementById('dailyChart'), {
+    type: 'line',
+    data: {labels: dailyLabels, datasets:[{label:'Visits', data: dailyData, fill:true, backgroundColor:'rgba(34,197,94,0.2)', borderColor:'#22c55e', tension:0.3}]},
+    options:{responsive:true, scales:{y:{beginAtZero:true}}}
+});
+</script>
+{% endblock %}

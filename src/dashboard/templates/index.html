@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Live Feed - Smart Bird Feeder{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Live Feed -->
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="px-6 py-4 border-b flex justify-between items-center">
+                <h2 class="text-lg font-semibold text-gray-800"><i class="fas fa-video text-red-500 mr-2"></i>Live Feeder View</h2>
+                <div class="flex items-center space-x-2">
+                    <span class="h-3 w-3 bg-green-500 rounded-full animate-pulse"></span>
+                    <span class="text-xs text-gray-500">Pi 3B • {{ stats.total_visits }} visits logged</span>
+                </div>
+            </div>
+            <div class="relative bg-black aspect-video flex items-center justify-center">
+                <img id="liveFeed" src="/api/live/frame" alt="Live feeder" class="w-full h-full object-contain" onerror="this.style.display='none'; document.getElementById('noFrame').style.display='flex'">
+                <div id="noFrame" class="hidden absolute inset-0 flex-col items-center justify-center text-gray-400 p-8 text-center">
+                    <i class="fas fa-camera text-5xl mb-4"></i>
+                    <p>No frame yet - pipeline will populate assets/best/ on first bird visit.</p>
+                    <p class="text-xs mt-2">For testing: <code>/api/live/mjpeg</code> opens camera directly (conflicts with main pipeline)</p>
+                    <button onclick="document.getElementById('liveFeed').src='/api/live/mjpeg'" class="mt-4 px-4 py-2 bg-green-600 text-white rounded">Try MJPEG test stream</button>
+                </div>
+                <div class="absolute bottom-3 left-3 bg-black bg-opacity-60 text-white text-xs px-3 py-1 rounded-full">
+                    <span id="liveStatus">Waiting for birds...</span>
+                </div>
+            </div>
+            <div class="px-6 py-3 bg-gray-50 flex justify-between text-xs text-gray-600">
+                <span>Pipeline: Motion Gate (320x240) → Bird Det (SSD MBv2, >70%) → IoU Tracker (grace {{ config.GRACE_PERIOD_SEC if config else '4s' }}) → Best-Frame (sharpness/size/pos) → Species (AIY 964, >85%)</span>
+                <button onclick="refreshLive()" class="text-green-600 hover:underline"><i class="fas fa-sync-alt"></i> Refresh</button>
+            </div>
+        </div>
+
+        <!-- Recent visits list -->
+        <div class="mt-6 bg-white rounded-xl shadow-lg p-6">
+            <h3 class="font-semibold text-gray-800 mb-4"><i class="fas fa-clock mr-2"></i>Recent Visits (last 10)</h3>
+            <div class="space-y-3" id="recentList">
+                {% for v in recent %}
+                <div class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-green-50 transition">
+                    <img src="/{{ v.best_image_path }}" alt="{{ v.species }}" class="w-16 h-16 rounded-lg object-cover bg-gray-200" onerror="this.src='https://via.placeholder.com/64?text={{ v.species[:1] }}'">
+                    <div class="ml-4 flex-1">
+                        <div class="flex justify-between">
+                            <span class="font-medium text-gray-900">{{ v.species }}</span>
+                            <span class="text-xs px-2 py-1 rounded-full {% if v.is_confident %}bg-green-100 text-green-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">{{ "%.0f"|format(v.confidence*100) }}%</span>
+                        </div>
+                        <div class="text-xs text-gray-500">{{ v.timestamp }} • {{ v.duration_sec|round(1) }}s visit • {{ v.num_candidates }} frames</div>
+                        <div class="text-xs text-gray-400 truncate">{{ v.raw_species }} — sharp {{ v.sharpness|round(1) }}</div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-gray-500 text-sm text-center py-8">No visits yet. Start pipeline: <code>python src/main.py</code> on Pi</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats sidebar -->
+    <div class="space-y-6">
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="font-semibold text-gray-800 mb-4">Today's Stats</h3>
+            <div class="grid grid-cols-2 gap-4 text-center">
+                <div class="bg-green-50 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-green-600">{{ stats.total_visits }}</div>
+                    <div class="text-xs text-gray-600">Total Visits</div>
+                </div>
+                <div class="bg-blue-50 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-blue-600">{{ stats.species_frequency|length }}</div>
+                    <div class="text-xs text-gray-600">Species Seen</div>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-yellow-600">{{ "%.0f"|format(stats.unknown_rate*100) }}%</div>
+                    <div class="text-xs text-gray-600">Unknown Rate</div>
+                </div>
+                <div class="bg-purple-50 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-purple-600">{{ stats.species_frequency[0].species if stats.species_frequency else '—' }}</div>
+                    <div class="text-xs text-gray-600 truncate">Top Visitor</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="font-semibold text-gray-800 mb-4">Top Species</h3>
+            <div class="space-y-2">
+                {% for s in stats.species_frequency[:6] %}
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-700">{{ s.species }}</span>
+                    <div class="flex items-center">
+                        <div class="w-20 bg-gray-200 rounded-full h-2 mr-2">
+                            <div class="bg-green-500 h-2 rounded-full" style="width: {{ (s.count / (stats.species_frequency[0].count if stats.species_frequency else 1) * 100) | int }}%"></div>
+                        </div>
+                        <span class="text-xs text-gray-500">{{ s.count }}</span>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-xs text-gray-400">No confident IDs yet. Need >85% species threshold.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="font-semibold text-gray-800 mb-4">Pipeline Health</h3>
+            <ul class="text-xs space-y-2 text-gray-600">
+                <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Motion gate: {{ 320 }}x{{ 240 }} frame diff, low CPU</li>
+                <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Bird detector: TFLite SSD MBv2 (bird >70%)</li>
+                <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Tracking: IoU {{ 0.3 }}, grace {{ 4.0 }}s debounce</li>
+                <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Best-frame: Laplacian var + size + edge clip</li>
+                <li><i class="fas fa-check-circle text-green-500 mr-2"></i>Species: AIY V1/3 MobileNet 964 classes, iNaturalist</li>
+                <li class="pt-2"><a href="/api/health" class="text-blue-600 hover:underline">/api/health →</a> • <a href="/api/stats" class="text-blue-600 hover:underline">/api/stats →</a></li>
+            </ul>
+        </div>
+
+        <div class="bg-gradient-to-r from-green-600 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+            <h3 class="font-semibold mb-2"><i class="fas fa-info-circle mr-2"></i>Mounting Decision Reminder</h3>
+            <p class="text-xs leading-relaxed">Blueprint Section 6: test Wi-Fi at fence location before finalizing. Option A (window) = easy power + sightline. Option B (fence) = weatherproofing + power run. Log RSSI with <code>scripts/wifi_test.py</code>.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function refreshLive(){
+    const img = document.getElementById('liveFeed');
+    img.src = '/api/live/frame?t=' + Date.now();
+    img.style.display='block';
+    document.getElementById('noFrame').style.display='none';
+}
+setInterval(refreshLive, 5000);
+
+// Poll API for recent visits every 10s
+async function pollRecent(){
+    try{
+        const res = await fetch('/api/visits?limit=10');
+        const data = await res.json();
+        if(data.length>0){
+            document.getElementById('liveStatus').textContent = `${data[0].species} • ${Math.round(data[0].confidence*100)}% • ${new Date(data[0].timestamp).toLocaleTimeString()}`;
+        }
+    }catch(e){}
+}
+setInterval(pollRecent, 10000);
+pollRecent();
+</script>
+{% endblock %}

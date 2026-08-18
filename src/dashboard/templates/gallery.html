@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Gallery - Bird Feeder{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-800">Sighting Gallery</h1>
+        <p class="text-sm text-gray-500">Best-frame per visit • scored by sharpness, size, position • species at >85% threshold else "unknown"</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <form method="GET" class="flex gap-2">
+            <select name="species" onchange="this.form.submit()" class="border rounded-lg px-3 py-2 text-sm bg-white">
+                <option value="all" {% if current_species=='all' %}selected{% endif %}>All species ({{ visits|length }})</option>
+                {% for sp in species_list %}
+                <option value="{{ sp }}" {% if current_species==sp %}selected{% endif %}>{{ sp }}</option>
+                {% endfor %}
+                <option value="unknown" {% if current_species=='unknown' %}selected{% endif %}>Unknown / Low conf</option>
+            </select>
+        </form>
+        <a href="/api/gallery?species={{ current_species }}" class="text-xs text-blue-600 hover:underline">JSON</a>
+    </div>
+</div>
+
+{% if visits %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    {% for v in visits %}
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition group">
+        <div class="relative aspect-square bg-gray-100">
+            <img src="/{{ v.best_image_path }}" alt="{{ v.species }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://via.placeholder.com/300?text={{ v.species }}'">
+            <div class="absolute top-2 left-2 flex gap-1">
+                <span class="text-xs px-2 py-1 rounded-full {% if v.is_confident %}bg-green-600 text-white{% else %}bg-yellow-500 text-white{% endif %}">{{ v.species }}</span>
+            </div>
+            <div class="absolute top-2 right-2 text-xs bg-black bg-opacity-60 text-white px-2 py-1 rounded-full">
+                {{ "%.0f"|format(v.confidence*100) }}%
+            </div>
+            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/60 to-transparent p-3">
+                <div class="text-white text-sm font-medium truncate">{{ v.raw_species }}</div>
+                <div class="text-white/70 text-xs">{{ v.timestamp }}</div>
+            </div>
+        </div>
+        <div class="p-3 text-xs text-gray-600 space-y-1">
+            <div class="flex justify-between"><span>Duration</span><span>{{ v.duration_sec|round(1) }}s • {{ v.num_candidates }} cand</span></div>
+            <div class="flex justify-between"><span>Sharpness (Laplacian var)</span><span>{{ v.sharpness|round(1) }}</span></div>
+            <div class="flex justify-between"><span>Session</span><span class="truncate ml-2">{{ v.session_id }}</span></div>
+            <details class="pt-1">
+                <summary class="cursor-pointer text-green-600">Top-3 predictions</summary>
+                <pre class="bg-gray-50 p-2 rounded mt-1 text-[10px] overflow-auto">{{ v.top_k_json }}</pre>
+                <pre class="bg-gray-50 p-2 rounded mt-1 text-[10px] overflow-auto">{{ v.bbox_json[:300] }}</pre>
+            </details>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<div class="mt-8 flex justify-center gap-4">
+    {% if page > 0 %}
+    <a href="?species={{ current_species }}&page={{ page-1 }}" class="px-4 py-2 bg-white rounded-lg shadow">← Prev</a>
+    {% endif %}
+    <span class="px-4 py-2 text-sm text-gray-500">Page {{ page }}</span>
+    <a href="?species={{ current_species }}&page={{ page+1 }}" class="px-4 py-2 bg-white rounded-lg shadow">Next →</a>
+</div>
+{% else %}
+<div class="bg-white rounded-xl shadow p-12 text-center text-gray-500">
+    <i class="fas fa-feather text-4xl mb-4"></i>
+    <p>No sightings yet for <strong>{{ current_species }}</strong>.</p>
+    <p class="text-sm mt-2">Start pipeline on Pi: <code class="bg-gray-100 px-2 py-1 rounded">python src/main.py</code> then wait for birds. Ensure models downloaded via <code>scripts/download_models.py</code></p>
+</div>
+{% endif %}
+{% endblock %}
