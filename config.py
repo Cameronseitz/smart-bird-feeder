@@ -60,8 +60,11 @@ EDGE_CLIP_MARGIN = 0.05        # if bbox within 5% of frame edge, penalize
 
 # --- Stage 5: Species Classifier ---
 # Google AIY birds_V1/3 : MobileNet, 964 classes, iNaturalist
+# Fallback to MobileNetV2 ImageNet quant if AIY missing (triage 2026 archive)
 SPECIES_MODEL_PATH = MODELS_DIR / "birds_V1_3.tflite"
+SPECIES_FALLBACK_MODEL_PATH = MODELS_DIR / "mobilenet_v2_1.0_224_quant.tflite"
 SPECIES_LABELS_PATH = MODELS_DIR / "aiy_birds_V1_3_labels.txt"
+SPECIES_FALLBACK_LABELS_PATH = MODELS_DIR / "imagenet_labels.txt"
 SPECIES_INPUT_SIZE = 224
 SPECIES_CONFIDENCE_THRESHOLD = 0.85  # 85-90% per spec, start 85
 SPECIES_TOP_K = 3

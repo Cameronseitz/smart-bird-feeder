@@ -39,15 +39,37 @@ echo "Upgrading pip..."
 pip install --upgrade pip wheel
 
 echo "Installing Python deps..."
-# tflite-runtime wheel for aarch64: needs specific version
-# Try tflite-runtime first, fallback note
-pip install opencv-python numpy Pillow Flask Flask-Cors requests httpx python-dotenv || true
+# Core deps - opencv via pip may conflict with apt, but try pip first for newer
+pip install numpy Pillow Flask Flask-Cors requests httpx python-dotenv || true
+# opencv may already be available via apt python3-opencv inside --system-site-packages venv, but try pip wheel
+pip install opencv-python || echo "opencv-python pip failed, using apt python3-opencv"
 
-# tflite-runtime install attempt
+# TFLite interpreter - Python 3.13 trixie broke tflite-runtime wheels
+# Preferred new runtime: ai-edge-litert (official successor), then tflite-runtime, then tensorflow (heavy)
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "armv7l" ]; then
-    echo "Installing tflite-runtime for $ARCH..."
-    pip install tflite-runtime || pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite_runtime || echo "tflite-runtime failed, will try tensorflow lite via tensorflow"
+    echo "Installing TFLite interpreter for $ARCH on Python $(python --version)..."
+    # Try new official runtime first (has py3.13 wheels on piwheels)
+    pip install ai-edge-litert 2>&1 | tail -20 || true
+    # Legacy tflite-runtime (works on py 3.9-3.11, fails on 3.13 trixie - expected)
+    pip install tflite-runtime 2>&1 | tail -20 || \
+    pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite_runtime 2>&1 | tail -20 || \
+    echo "tflite-runtime no wheel for $(python --version) on trixie - will use ai-edge-litert if installed"
+    
+    # Verify which interpreter is available
+    python -c "import sys; print('Checking interpreters...'); \
+try:
+    from ai_edge_litert.interpreter import Interpreter; print('✔ ai-edge-litert available'); \
+except Exception as e: print(f'✘ ai-edge-litert: {e}'); \
+try:
+    from tflite_runtime.interpreter import Interpreter; print('✔ tflite-runtime available'); \
+except Exception as e: print(f'✘ tflite-runtime: {e}'); \
+try:
+    import tensorflow as tf; print('✔ tensorflow available'); \
+except Exception as e: print(f'✘ tensorflow: {e}')" || true
+else
+    echo "x86 architecture - installing tflite-runtime generic"
+    pip install tflite-runtime || pip install ai-edge-litert || true
 fi
 
 echo "Downloading models..."

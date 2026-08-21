@@ -26,24 +26,32 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# TFLite import with fallbacks
+# TFLite import with fallbacks - trixie/py3.13 prefers ai-edge-litert
 Interpreter = None
 try:
-    from tflite_runtime.interpreter import Interpreter as TFLiteInterpreter
-    Interpreter = TFLiteInterpreter
-    logger.info("Using tflite_runtime.Interpreter")
+    # New official runtime for 3.13 trixie (has aarch64 wheels on piwheels)
+    from ai_edge_litert.interpreter import Interpreter as NewInterpreter
+    Interpreter = NewInterpreter
+    logger.info("Using ai_edge_litert.Interpreter (trixie/py3.13 preferred)")
 except ImportError:
     try:
-        import tensorflow as tf
-        Interpreter = tf.lite.Interpreter
-        logger.info("Using tensorflow.lite.Interpreter")
+        from tflite_runtime.interpreter import Interpreter as TFLiteInterpreter
+        Interpreter = TFLiteInterpreter
+        logger.info("Using tflite_runtime.Interpreter")
     except ImportError:
         try:
-            from ai_edge_litert.interpreter import Interpreter as NewInterpreter
-            Interpreter = NewInterpreter
-        except:
-            logger.warning("No TFLite interpreter found! Install tflite-runtime")
-            Interpreter = None
+            import tensorflow as tf
+            Interpreter = tf.lite.Interpreter
+            logger.info("Using tensorflow.lite.Interpreter (heavy, fallback)")
+        except ImportError:
+            try:
+                # older import path for ai-edge-litert
+                from ai_edge_litert import Interpreter as NewInterpreter2
+                Interpreter = NewInterpreter2
+                logger.info("Using ai_edge_litert.Interpreter (alt import)")
+            except:
+                logger.warning("No TFLite interpreter found! Install ai-edge-litert (pip install ai-edge-litert) or tflite-runtime")
+                Interpreter = None
 
 class BirdDetector:
     def __init__(

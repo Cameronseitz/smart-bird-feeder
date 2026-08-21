@@ -72,16 +72,22 @@ class CameraInterface:
         raise RuntimeError("No camera found via picamera2 nor OpenCV")
 
     def read(self) -> Optional[np.ndarray]:
-        """Return single BGR frame or None"""
+        """Return single BGR frame or None - trixie libcamera v0.7.1 fix: RGB888 returns BGR order"""
         if self.backend == "picamera2":
             try:
-                # Picamera2 returns RGB888, convert to BGR for OpenCV compatibility
-                rgb = self._picam2.capture_array("main")
-                # Ensure contiguous
-                if rgb.ndim == 3:
-                    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                # On Pi OS trixie libcamera v0.7.1+rpt20260609, main RGB888 actually returns BGR
+                # Your tests: person right + yellow→blue / green stays green confirms double-swap
+                # So return directly without RGB2BGR conversion - already BGR for OpenCV
+                # If colors look wrong, toggle the commented conversion below
+                arr = self._picam2.capture_array("main")
+                if arr.ndim == 3:
+                    # Fixed: don't convert, arr is already BGR on this stack
+                    bgr = arr
+                    # bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)  # use this if red↔blue swapped
+                    if not bgr.flags['C_CONTIGUOUS']:
+                        bgr = np.ascontiguousarray(bgr)
                     return bgr
-                return rgb
+                return arr
             except Exception as e:
                 logger.error(f"Picamera2 capture failed: {e}")
                 return None

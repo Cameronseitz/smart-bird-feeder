@@ -1,30 +1,29 @@
-# Core Pi 3B dependencies
+# Core Pi 3B dependencies - Trixie (Debian 13 / Python 3.13) compatible
 # Pi OS 64-bit should have picamera2 via apt; opencv also available via apt as python3-opencv
-# Using venv: pip install these after system packages
+# Using venv with --system-site-packages lets apt packages be seen
 
-opencv-python>=4.8.0
+# OpenCV - try pip wheel, fallback to apt python3-opencv (already in venv via system site packages)
+opencv-python>=4.8.0 ; platform_machine != "aarch64"
 numpy>=1.24.0
 Pillow>=10.0.0
 
-# TFLite - prefer tflite-runtime for Pi 3, fallback to tensorflow-lite in code
-tflite-runtime>=2.14.0 ; platform_machine == "aarch64" or platform_machine == "armv7l"
-# If tflite-runtime not available, use:
-# tensorflow==2.14.0  # heavy (~400MB) but includes Interpreter, only if needed
+# TFLite interpreter - new official runtime for trixie/py3.13
+# ai-edge-litert has wheels for aarch64 py3.13 on piwheels; tflite-runtime does NOT have py3.13 wheel (fails on trixie)
+ai-edge-litert>=1.2.0 ; platform_machine == "aarch64" or platform_machine == "armv7l"
+# Legacy fallback - only works on older Python (3.9-3.11)
+tflite-runtime>=2.14.0 ; python_version < "3.12" and (platform_machine == "aarch64" or platform_machine == "armv7l")
+# Heavy fallback if neither runtime available (400MB+):
+# tensorflow==2.14.0
 
 Flask>=2.3.0
 Flask-Cors>=4.0.0
 
 # Optional: picamera2 - install via apt normally, but pip backup:
-# picamera2
-# libcamera
+# picamera2  (apt preferred: python3-picamera2)
 
 # Optional cloud fallback (descoped but left for optional second pass)
 requests>=2.31.0
 httpx>=0.24.0
-
-# Ultralytics YOLOv8 Nano optional (if you want detection alt route)
-# ultralytics>=8.0.0
-# torch -- use pi-specific wheel, heavy on Pi 3, not recommended
 
 # Utility
 python-dotenv>=1.0.0
