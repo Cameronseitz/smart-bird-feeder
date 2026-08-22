@@ -35,7 +35,7 @@ MOTION_HISTORY_SECONDS = 1.0   # keep background adapt slow
 # MobileNetV2 SSD quantized (COCO) or YOLOv8n
 DETECTION_MODEL_PATH = MODELS_DIR / "ssd_mobilenet_v2_coco_quant.tflite"
 DETECTION_LABELS_PATH = MODELS_DIR / "coco_labels.txt"
-DETECTION_THRESHOLD = 0.70   # 70% per spec
+DETECTION_THRESHOLD = 0.65   # 65% per user tuning
 DETECTION_INPUT_SIZE = 300   # SSD 300x300
 # COCO bird class handling: COCO 90 includes bird as id 16 (1-indexed) or 14 zero-indexed depending on model
 # We'll scan label file for 'bird' string match
@@ -66,7 +66,7 @@ SPECIES_FALLBACK_MODEL_PATH = MODELS_DIR / "mobilenet_v2_1.0_224_quant.tflite"
 SPECIES_LABELS_PATH = MODELS_DIR / "aiy_birds_V1_3_labels.txt"
 SPECIES_FALLBACK_LABELS_PATH = MODELS_DIR / "imagenet_labels.txt"
 SPECIES_INPUT_SIZE = 224
-SPECIES_CONFIDENCE_THRESHOLD = 0.85  # 85-90% per spec, start 85
+SPECIES_CONFIDENCE_THRESHOLD = 0.65  # 65% per user tuning (lowered from 85%)
 SPECIES_TOP_K = 3
 
 # Optional cloud fallback
