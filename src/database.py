@@ -1,24 +1,17 @@
 """
 SQLite persistence for visits
-
-Tables:
-- visits: id, session_id, timestamp, species, raw_species, confidence, is_confident,
-         image_path (best frame), bbox_json, sharpness, inference_ms, top_k_json, duration_sec
-- settings: key/value for thresholds etc (optional)
 """
-import sqlite3
+import sys
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
-try:
-    import config
-except ImportError:
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    import config
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +36,6 @@ CREATE TABLE IF NOT EXISTS visits (
 );
 """
 
-CREATE_SETTINGS_TABLE = """
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-"""
 
 class BirdDatabase:
     def __init__(self, db_path=config.DB_PATH):
@@ -62,7 +48,6 @@ class BirdDatabase:
     def _init_tables(self):
         cur = self.conn.cursor()
         cur.execute(CREATE_VISITS_TABLE)
-        cur.execute(CREATE_SETTINGS_TABLE)
         self.conn.commit()
         logger.info(f"DB initialized at {self.db_path}")
 

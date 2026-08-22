@@ -1,38 +1,15 @@
 """
-Main bird feeder pipeline per blueprint v2
-
-Stages:
- Camera (CSI/OpenCV)
-  → Stage1 Motion Filter (320x240 diff) --no--> Drop/Idle
-  → Stage2 Bird Detector (TFLite SSD MBv2, bird >70%) --not bird--> Drop
-  → Stage3 Visit Tracking (IoU)
-  → Stage4 Best-Frame Selection (sharpness + size + position)
-  → Stage5 Species Classifier (AIY birds_V1/3 964 classes)
-  → Confidence Threshold (85%+ else unknown)
-  → SQLite + asset save
-  → Dashboard Flask serves via separate process
-
-Designed for Pi 3B CPU ~600ms-1.2s inference.
-
-Usage on Pi:
-  python scripts/download_models.py   # first time
-  python src/main.py                  # runs pipeline loop
-  In another terminal: python src/dashboard/app.py  # serves dashboard
-
-Or combined via systemd or tmux.
+Main pipeline: Motion -> Bird Detector -> Tracker -> Best Frame -> Species -> DB
 """
-
-import os
 import sys
 import time
 import logging
 import signal
-import cv2
-import json
 from pathlib import Path
+
+import cv2
 from datetime import datetime
 
-# Ensure project root on path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
@@ -42,12 +19,12 @@ from src.pipeline import MotionDetector, BirdDetector, VisitTracker, BestFrameSe
 from src.pipeline.best_frame_selector import compute_sharpness
 from src.database import BirdDatabase
 
-# Logging setup
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("main")
+
 
 class BirdFeederSystem:
     def __init__(self):

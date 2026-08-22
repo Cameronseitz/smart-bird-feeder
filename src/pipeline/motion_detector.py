@@ -1,25 +1,20 @@
 """
-Stage 1: Local Motion Filter
-Low-res 320x240 frame differencing to gate expensive inference on Pi 3B.
-
-Per blueprint:
-- Keep baseline CPU low
-- Only trigger Stage 2 when motion exceeds threshold
+Stage 1: Motion Gate - 320x240 diff to gate inference
 """
-import cv2
-import numpy as np
+import sys
 import time
 import logging
+from pathlib import Path
 
-try:
-    import config
-except ImportError:
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    import config
+import cv2
+import numpy as np
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+import config
 
 logger = logging.getLogger(__name__)
+
 
 class MotionDetector:
     def __init__(
@@ -37,7 +32,7 @@ class MotionDetector:
         self.min_area = min_area
         self.blur_kernel = blur_kernel
         self.dilate_iters = dilate_iters
-        self.avg_frame = None  # background model running average
+        self.avg_frame = None
         self.last_trigger = 0
 
     def _preprocess(self, frame: np.ndarray) -> np.ndarray:
@@ -47,16 +42,12 @@ class MotionDetector:
         return gray
 
     def detect(self, frame: np.ndarray) -> bool:
-        """
-        Returns True if motion exceeds threshold.
-        """
         gray = self._preprocess(frame)
 
         if self.avg_frame is None:
             self.avg_frame = gray.astype("float")
             return False
 
-        # accumulateWeighted background model (~1 sec history)
         cv2.accumulateWeighted(gray, self.avg_frame, 0.15)
         background = cv2.convertScaleAbs(self.avg_frame)
 
