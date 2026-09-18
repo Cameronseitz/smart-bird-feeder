@@ -194,29 +194,41 @@ Threshold tuning:
 
 ---
 
-## Frigate Rejected
+## Autostart on Plug-In (systemd)
 
-Frigate needs NVR stack (MQTT, continuous decode), best on N100 / Pi5+Hailo, Coral USB TPU driver archived. Kept only AIY model.
+`systemd/bird-feeder.service` (vision `src/main.py`) + `systemd/bird-dashboard.service`
+(Flask `src/dashboard/app.py :5000`) are independent, restart on crash, start on boot.
 
----
+One-time install on Pi:
 
-## Systemd Autostart
-
-`/etc/systemd/system/bird-feeder.service`:
-```
-[Unit]
-Description=Smart Bird Feeder Pipeline
-After=network.target
-[Service]
-User=pi
-WorkingDirectory=/home/pi/bird-feeder-raspberry-pi
-ExecStart=/home/pi/bird-feeder-raspberry-pi/venv/bin/python src/main.py
-Restart=always
-[Install]
-WantedBy=multi-user.target
+```bash
+cd ~/bird-feeder-raspberry-pi
+chmod +x scripts/install_services.sh
+./scripts/install_services.sh
+# enables + starts both now, and on every boot after power plug
 ```
 
-Dashboard similar. `sudo systemctl enable --now bird-feeder bird-dashboard`
+Verify:
+
+```bash
+sudo systemctl is-enabled bird-feeder bird-dashboard
+sudo systemctl status bird-feeder bird-dashboard --no-pager
+journalctl -u bird-feeder -f
+journalctl -u bird-dashboard -f
+# dashboard at http://<pi-ip>:5000
+sudo reboot  # unplug/replug test – both should come back up
+```
+
+Useful:
+
+```bash
+sudo systemctl restart bird-feeder bird-dashboard
+sudo systemctl stop bird-feeder bird-dashboard
+sudo systemctl disable bird-feeder bird-dashboard  # turn autostart off
+```
+
+Note: installer patches `User=` / `WorkingDirectory=` / `ExecStart=` to your actual
+checkout path, adds you to `video` group for Arducam Module 3 access.
 
 ---
 

@@ -1,15 +1,19 @@
 [Unit]
-Description=Smart Bird Feeder Pipeline (Pi 3B)
-After=network.target
+Description=Smart Bird Feeder Vision Pipeline (Pi 3B + Arducam 12MP Module 3)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
+Type=simple
 User=pi
 WorkingDirectory=/home/pi/bird-feeder-raspberry-pi
 ExecStart=/home/pi/bird-feeder-raspberry-pi/venv/bin/python src/main.py
+Environment=PYTHONUNBUFFERED=1
 Restart=always
-RestartSec=5
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=bird-feeder
 
 [Install]
 WantedBy=multi-user.target

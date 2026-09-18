@@ -1,13 +1,19 @@
 [Unit]
-Description=Smart Bird Feeder Dashboard Flask
-After=network.target bird-feeder.service
+Description=Smart Bird Feeder Dashboard (Flask :5000)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
+Type=simple
 User=pi
 WorkingDirectory=/home/pi/bird-feeder-raspberry-pi
 ExecStart=/home/pi/bird-feeder-raspberry-pi/venv/bin/python src/dashboard/app.py
+Environment=PYTHONUNBUFFERED=1
 Restart=always
-RestartSec=5
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bird-dashboard
 
 [Install]
 WantedBy=multi-user.target
