@@ -28,24 +28,100 @@ class CameraInterface:
         self.backend = None
         self._init_camera()
 
+    def _build_controls(self, include_optional: bool = True) -> dict:
+        """Feeder-tuned libcamera controls. Missing attrs fall back to safe defaults."""
+        af_mode = getattr(config, "CAMERA_AF_MODE", 2)
+        af_speed = getattr(config, "CAMERA_AF_SPEED", 1)
+        af_windows = getattr(config, "CAMERA_AF_WINDOWS", None)
+        lens_pos = getattr(config, "CAMERA_LENS_POSITION", None)
+        ae_metering = getattr(config, "CAMERA_AE_METERING_MODE", 0)
+        ae_exposure = getattr(config, "CAMERA_AE_EXPOSURE_MODE", 1)
+        ev = getattr(config, "CAMERA_EXPOSURE_VALUE", 0.6)
+
+        controls = {
+            "FrameRate": float(self.fps),
+            "AeMeteringMode": ae_metering,
+            "AeExposureMode": ae_exposure,
+            "ExposureValue": float(ev),
+        }
+        if lens_pos is not None:
+            # Fixed-distance feeder: lock focus, skip AF hunting entirely.
+            controls["AfMode"] = 0
+            controls["LensPosition"] = float(lens_pos)
+        else:
+            controls["AfMode"] = af_mode
+            if include_optional:
+                controls["AfSpeed"] = af_speed
+                if af_windows:
+                    # libcamera v0.7.1 Rectangle() takes ints only. Normalized
+                    # 0..1 floats kill init -> skip them loudly instead.
+                    try:
+                        flat = [float(v) for w in af_windows for v in w]
+                        if all(v <= 1.0 for v in flat):
+                            logger.warning("CAMERA_AF_WINDOWS looks normalized (0..1), "
+                                           "this stack needs sensor-pixel ints - skipping")
+                        else:
+                            controls["AfWindows"] = tuple(tuple(int(v) for v in w) for w in af_windows)
+                    except Exception as we:
+                        logger.warning(f"Bad CAMERA_AF_WINDOWS {af_windows}: {we} - skipping")
+        return controls
+
+    def _start_picamera2(self, controls: dict):
+        from picamera2 import Picamera2
+
+        self._picam2 = Picamera2()
+        cam_config = self._picam2.create_preview_configuration(
+            main={"size": (self.width, self.height), "format": "RGB888"},
+            lores={"size": (320, 240), "format": "YUV420"},
+            controls=controls,
+        )
+        self._picam2.configure(cam_config)
+        self._picam2.start()
+        # Re-apply one-by-one: older libcamera builds reject unknown
+        # keys wholesale at configure time but accept the rest via set_controls.
+        try:
+            self._picam2.set_controls(controls)
+        except Exception as e:
+            logger.warning(f"Bulk set_controls rejected ({e}), retrying per-key")
+            for k, v in controls.items():
+                try:
+                    self._picam2.set_controls({k: v})
+                except Exception as ke:
+                    logger.warning(f"Control {k} unsupported: {ke}")
+        time.sleep(2.0)  # let AF + AEC settle
+        logger.info(f"Picamera2 {self.width}x{self.height} @{self.fps}fps controls={controls}")
+        self.backend = "picamera2"
+
     def _init_camera(self):
         try:
-            from picamera2 import Picamera2
-
-            self._picam2 = Picamera2()
-            cam_config = self._picam2.create_preview_configuration(
-                main={"size": (self.width, self.height), "format": "RGB888"},
-                lores={"size": (320, 240), "format": "YUV420"},
-                controls={"AfMode": 2},
-            )
-            self._picam2.configure(cam_config)
-            self._picam2.start()
-            time.sleep(1.5)
-            logger.info(f"Picamera2 {self.width}x{self.height} @{self.fps}fps AF continuous")
-            self.backend = "picamera2"
-            return
+            controls = self._build_controls(include_optional=True)
+            try:
+                self._start_picamera2(controls)
+                return
+            except Exception as e:
+                logger.warning(f"Picamera2 full controls failed ({e}), retrying minimal")
+                try:
+                    if self._picam2 is not None:
+                        try:
+                            self._picam2.close()
+                        except Exception:
+                            pass
+                        self._picam2 = None
+                except Exception:
+                    pass
+                minimal = self._build_controls(include_optional=False)
+                self._start_picamera2(minimal)
+                return
         except Exception as e:
             logger.warning(f"Picamera2 failed ({e}), trying OpenCV")
+            try:
+                if self._picam2 is not None:
+                    try:
+                        self._picam2.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             self._picam2 = None
 
         for idx in (0, 1):

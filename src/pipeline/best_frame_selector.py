@@ -45,19 +45,35 @@ class BestFrameSelector:
         position_weight=config.POSITION_WEIGHT,
         edge_margin=config.EDGE_CLIP_MARGIN,
         blur_thresh=config.SHARPNESS_BLUR_THRESHOLD,
+        good_ref=getattr(config, "SHARPNESS_GOOD_REF", 500.0),
+        max_bbox_frac=getattr(config, "MAX_BBOX_FRACTION", 0.55),
     ):
         self.w_sharp = sharpness_weight
         self.w_size = size_weight
         self.w_pos = position_weight
         self.edge_margin = edge_margin
         self.blur_thresh = blur_thresh
+        self.good_ref = good_ref
+        self.max_bbox_frac = max_bbox_frac
 
     def score_candidate(self, candidate, frame_shape) -> float:
         sharp = candidate.sharpness
-        sharp_norm = (sharp / self.blur_thresh) * 0.2 if sharp < self.blur_thresh else min(1.0, sharp / 500.0)
+        if sharp < self.blur_thresh:
+            # Below blur floor: heavy penalty, linear 0..0.2
+            sharp_norm = (sharp / max(self.blur_thresh, 1e-6)) * 0.2
+        else:
+            # 0.2 at threshold -> 1.0 at good_ref
+            sharp_norm = 0.2 + 0.8 * min(1.0, sharp / max(self.good_ref, 1e-6))
 
         h, w = frame_shape[:2]
-        size_norm = min(1.0, (candidate.bbox_size / (h * w)) * 10)
+        size_frac = candidate.bbox_size / max(h * w, 1)
+        size_norm = min(1.0, size_frac * 10)
+        # Too-close penalty: bbox filling >55% of frame is inside the
+        # Module 3 min-focus distance - almost certainly out of focus.
+        close_penalty = 1.0
+        if size_frac > self.max_bbox_frac:
+            over = (size_frac - self.max_bbox_frac) / max(1.0 - self.max_bbox_frac, 1e-6)
+            close_penalty = max(0.2, 1.0 - over * 0.8)
 
         det = candidate.detection
         x1, y1, x2, y2 = det["bbox_px"]
@@ -76,7 +92,8 @@ class BestFrameSelector:
             pos_score = 1.0 - ((dx + dy) / 2) * 0.5
 
         pos_score = max(0.0, min(1.0, pos_score))
-        return (self.w_sharp * sharp_norm) + (self.w_size * size_norm) + (self.w_pos * pos_score)
+        base = (self.w_sharp * sharp_norm) + (self.w_size * size_norm) + (self.w_pos * pos_score)
+        return base * close_penalty
 
     def select_best(self, session) -> Optional[object]:
         if not session.candidates:

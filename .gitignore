@@ -32,3 +32,6 @@ Thumbs.db
 commands.txt
 
 on-my-pi
+
+# Per-Pi dashboard tuning (written by settings page, survives reboot)
+config_overrides.json
