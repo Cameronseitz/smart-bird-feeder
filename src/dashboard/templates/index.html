@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Live Feed - Smart Bird Feeder{% endblock %}
+{% block title %}Live Feed - Seitz Sparrows{% endblock %}
 {% block content %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Live Feed -->
@@ -24,8 +24,7 @@
                     <span id="liveStatus">Waiting for birds...</span>
                 </div>
             </div>
-            <div class="px-6 py-3 bg-gray-50 flex justify-between text-xs text-gray-600">
-                <span>Pipeline: Motion Gate (320x240) → Bird Det (SSD MBv2, >70%) → IoU Tracker (grace {{ config.GRACE_PERIOD_SEC if config else '4s' }}) → Best-Frame (sharpness/size/pos) → Species (AIY 964, >85%)</span>
+            <div class="px-6 py-3 bg-gray-50 flex justify-end text-xs text-gray-600">
                 <button onclick="refreshLive()" class="text-green-600 hover:underline"><i class="fas fa-sync-alt"></i> Refresh</button>
             </div>
         </div>
@@ -42,8 +41,8 @@
                             <span class="font-medium text-gray-900">{{ v.species }}</span>
                             <span class="text-xs px-2 py-1 rounded-full {% if v.is_confident %}bg-green-100 text-green-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">{{ "%.0f"|format(v.confidence*100) }}%</span>
                         </div>
-                        <div class="text-xs text-gray-500">{{ v.timestamp }} • {{ v.duration_sec|round(1) }}s visit • {{ v.num_candidates }} frames</div>
-                        <div class="text-xs text-gray-400 truncate">{{ v.raw_species }} — sharp {{ v.sharpness|round(1) }}</div>
+                        <div class="text-xs text-gray-500">{{ v.timestamp|short_time }} • {{ v.duration_sec|round(1) }}s visit • {{ v.num_candidates }} frames</div>
+                        <div class="text-xs text-gray-400 truncate">sharp {{ v.sharpness|round(1) }}</div>
                     </div>
                 </div>
                 {% else %}
@@ -108,10 +107,6 @@
             </ul>
         </div>
 
-        <div class="bg-gradient-to-r from-green-600 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-            <h3 class="font-semibold mb-2"><i class="fas fa-info-circle mr-2"></i>Mounting Decision Reminder</h3>
-            <p class="text-xs leading-relaxed">Blueprint Section 6: test Wi-Fi at fence location before finalizing. Option A (window) = easy power + sightline. Option B (fence) = weatherproofing + power run. Log RSSI with <code>scripts/wifi_test.py</code>.</p>
-        </div>
     </div>
 </div>
 {% endblock %}
@@ -131,7 +126,7 @@ async function pollRecent(){
         const res = await fetch('/api/visits?limit=10');
         const data = await res.json();
         if(data.length>0){
-            document.getElementById('liveStatus').textContent = `${data[0].species} • ${Math.round(data[0].confidence*100)}% • ${new Date(data[0].timestamp).toLocaleTimeString()}`;
+            document.getElementById('liveStatus').textContent = `${data[0].species} • ${Math.round(data[0].confidence*100)}% • ${new Date(data[0].timestamp).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
         }
     }catch(e){}
 }

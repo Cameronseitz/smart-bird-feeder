@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Gallery - Bird Feeder{% endblock %}
+{% block title %}Gallery - Seitz Sparrows{% endblock %}
 {% block content %}
 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
     <div>
@@ -24,8 +24,8 @@
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
     {% for v in visits %}
     <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition group">
-        <div class="relative aspect-square bg-gray-100">
-            <img src="/{{ v.best_image_path }}" alt="{{ v.species }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://via.placeholder.com/300?text={{ v.species }}'">
+        <div class="relative aspect-video bg-gray-100">
+            <img src="/{{ v.best_image_path }}" alt="{{ v.species }}" class="w-full h-full object-contain group-hover:scale-105 transition duration-300" onerror="this.src='https://via.placeholder.com/640x360?text={{ v.species }}'">
             <div class="absolute top-2 left-2 flex gap-1">
                 <span class="text-xs px-2 py-1 rounded-full {% if v.is_confident %}bg-green-600 text-white{% else %}bg-yellow-500 text-white{% endif %}">{{ v.species }}</span>
             </div>
@@ -33,14 +33,17 @@
                 {{ "%.0f"|format(v.confidence*100) }}%
             </div>
             <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/60 to-transparent p-3">
-                <div class="text-white text-sm font-medium truncate">{{ v.raw_species }}</div>
-                <div class="text-white/70 text-xs">{{ v.timestamp }}</div>
+                <div class="text-white text-sm font-medium truncate">{{ v.species }}</div>
+                <div class="text-white/70 text-xs">{{ v.timestamp|short_time }}</div>
             </div>
         </div>
         <div class="p-3 text-xs text-gray-600 space-y-1">
-            <div class="flex justify-between"><span>Duration</span><span>{{ v.duration_sec|round(1) }}s • {{ v.num_candidates }} cand</span></div>
+            <div class="flex justify-between"><span>Duration</span><span>{{ v.duration_sec|round(1) }}s • <a href="/visit/{{ v.id }}" class="text-green-600 hover:underline" title="View all candidate frames">{{ v.num_candidates }} cand</a></span></div>
             <div class="flex justify-between"><span>Sharpness (Laplacian var)</span><span>{{ v.sharpness|round(1) }}</span></div>
             <div class="flex justify-between"><span>Session</span><span class="truncate ml-2">{{ v.session_id }}</span></div>
+            <div class="flex justify-end pt-1">
+                <button type="button" onclick="deleteVisit({{ v.id }}, '{{ v.species }}')" class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-xs"><i class="fas fa-trash mr-1"></i>Delete</button>
+            </div>
             <details class="pt-1">
                 <summary class="cursor-pointer text-green-600">Top-3 predictions</summary>
                 <pre class="bg-gray-50 p-2 rounded mt-1 text-[10px] overflow-auto">{{ v.top_k_json }}</pre>
@@ -64,4 +67,18 @@
     <p class="text-sm mt-2">Start pipeline on Pi: <code class="bg-gray-100 px-2 py-1 rounded">python src/main.py</code> then wait for birds. Ensure models downloaded via <code>scripts/download_models.py</code></p>
 </div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+async function deleteVisit(visitId, species){
+    if(!confirm(`Delete this ${species} sighting and its photo? This cannot be undone.`)) return;
+    if(!confirm('Are you sure? The image file will be permanently deleted.')) return;
+    try{
+        const res = await fetch(`/api/visits/${visitId}`, {method: 'DELETE'});
+        const data = await res.json();
+        if(!res.ok){ alert('Delete failed: ' + JSON.stringify(data)); return; }
+        location.reload();
+    }catch(e){ alert('Delete failed: ' + e); }
+}
+</script>
 {% endblock %}

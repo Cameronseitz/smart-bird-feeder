@@ -37,6 +37,42 @@ CREATE TABLE IF NOT EXISTS visits (
 """
 
 
+def _common(label) -> str:
+    try:
+        from src.dashboard.names import common_name
+
+        return common_name(label)
+    except Exception:
+        return str(label or "unknown").strip() or "unknown"
+
+
+def _normalize_visit_row(row: Dict) -> Dict:
+    try:
+        if "species" in row:
+            row["species"] = _common(row.get("species"))
+        # Keep raw_species key for backwards compat but mirror common name
+        # so templates/APIs never leak scientific names.
+        if "raw_species" in row:
+            row["raw_species"] = row.get("species", "unknown")
+        tk = row.get("top_k_json")
+        if isinstance(tk, str) and tk:
+            try:
+                data = json.loads(tk)
+                if isinstance(data, list):
+                    normed = []
+                    for item in data:
+                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                            normed.append([_common(item[0]), item[1]])
+                        else:
+                            normed.append(item)
+                    row["top_k_json"] = json.dumps(normed)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return row
+
+
 class BirdDatabase:
     def __init__(self, db_path=config.DB_PATH):
         self.db_path = Path(db_path)
@@ -108,68 +144,174 @@ class BirdDatabase:
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM visits ORDER BY created_at DESC LIMIT ?", (limit,))
         rows = cur.fetchall()
-        return [dict(r) for r in rows]
+        return [_normalize_visit_row(dict(r)) for r in rows]
 
     def get_visit_by_id(self, visit_id: int) -> Optional[Dict]:
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM visits WHERE id=?", (visit_id,))
         row = cur.fetchone()
-        return dict(row) if row else None
+        return _normalize_visit_row(dict(row)) if row else None
 
-    def get_stats(self) -> Dict:
+    def _all_visits_legacy_aware(self):
         cur = self.conn.cursor()
-        # total visits
-        cur.execute("SELECT COUNT(*) as total FROM visits")
-        total = cur.fetchone()["total"]
+        cur.execute("SELECT species, raw_species, confidence, is_confident, timestamp FROM visits")
+        return [dict(r) for r in cur.fetchall()]
 
-        # species frequency
-        cur.execute("""
-            SELECT species, COUNT(*) as count, AVG(confidence) as avg_conf
-            FROM visits WHERE is_confident=1
-            GROUP BY species ORDER BY count DESC
-        """)
-        species_freq = [dict(r) for r in cur.fetchall()]
+    def distinct_species(self) -> List[str]:
+        cur = self.conn.cursor()
+        cur.execute("SELECT species, raw_species FROM visits WHERE is_confident=1")
+        seen = {}
+        for r in cur.fetchall():
+            name = _common(r["species"])
+            if name == "unknown":
+                name = _common(r["raw_species"])
+            if name and name != "unknown" and name not in seen:
+                seen[name] = True
+        return sorted(seen.keys())
 
-        # hourly distribution
-        cur.execute("""
-            SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count
-            FROM visits GROUP BY hour ORDER BY hour
-        """)
-        hourly = [dict(r) for r in cur.fetchall()]
-        # fill missing hours 0-23
-        hourly_map = {r["hour"]: r["count"] for r in hourly}
-        full_hourly = [{"hour": h, "count": hourly_map.get(h,0)} for h in range(24)]
+    def get_stats(self, species_filter=None) -> Dict:
+        filt = _common(species_filter) if species_filter and species_filter != "all" else None
+        cur = self.conn.cursor()
+        if not filt:
+            # total visits
+            cur.execute("SELECT COUNT(*) as total FROM visits")
+            total = cur.fetchone()["total"]
 
-        # daily last 7 days
-        cur.execute("""
-            SELECT date(timestamp) as day, COUNT(*) as count
-            FROM visits WHERE timestamp >= date('now','-7 days')
-            GROUP BY day ORDER BY day
-        """)
-        daily = [dict(r) for r in cur.fetchall()]
+            # species frequency (merge legacy scientific labels via common-name)
+            cur.execute("""
+                SELECT species, raw_species, COUNT(*) as count, AVG(confidence) as avg_conf
+                FROM visits WHERE is_confident=1
+                GROUP BY species, raw_species ORDER BY count DESC
+            """)
+            merged: Dict[str, Dict] = {}
+            conf_sum: Dict[str, float] = {}
+            conf_n: Dict[str, int] = {}
+            for r in cur.fetchall():
+                name = _common(r["species"])
+                if name == "unknown":
+                    name = _common(r["raw_species"])
+                if name == "unknown":
+                    continue
+                merged[name] = merged.get(name, 0) + r["count"]
+            # avg conf per normalized species
+            cur.execute("SELECT species, raw_species, confidence FROM visits WHERE is_confident=1")
+            for r in cur.fetchall():
+                name = _common(r["species"])
+                if name == "unknown":
+                    name = _common(r["raw_species"])
+                if name == "unknown":
+                    continue
+                conf_sum[name] = conf_sum.get(name, 0.0) + float(r["confidence"] or 0)
+                conf_n[name] = conf_n.get(name, 0) + 1
+            species_freq = [
+                {"species": k, "count": v, "avg_conf": (conf_sum.get(k, 0) / conf_n.get(k, 1))}
+                for k, v in sorted(merged.items(), key=lambda kv: kv[1], reverse=True)
+            ]
 
-        # unknown rate
-        cur.execute("SELECT COUNT(*) as unknown_cnt FROM visits WHERE species='unknown' OR is_confident=0")
-        unknown_cnt = cur.fetchone()["unknown_cnt"]
-        unknown_rate = unknown_cnt / total if total>0 else 0
+            # hourly distribution
+            cur.execute("""
+                SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count
+                FROM visits GROUP BY hour ORDER BY hour
+            """)
+            hourly = [dict(r) for r in cur.fetchall()]
+            hourly_map = {r["hour"]: r["count"] for r in hourly}
+            full_hourly = [{"hour": h, "count": hourly_map.get(h, 0)} for h in range(24)]
 
+            # daily last 7 days
+            cur.execute("""
+                SELECT date(timestamp) as day, COUNT(*) as count
+                FROM visits WHERE timestamp >= date('now','-7 days')
+                GROUP BY day ORDER BY day
+            """)
+            daily = [dict(r) for r in cur.fetchall()]
+
+            # unknown rate
+            cur.execute("SELECT COUNT(*) as unknown_cnt FROM visits WHERE species='unknown' OR is_confident=0")
+            unknown_cnt = cur.fetchone()["unknown_cnt"]
+            unknown_rate = unknown_cnt / total if total > 0 else 0
+
+            return {
+                "total_visits": total,
+                "species_frequency": species_freq,
+                "hourly_distribution": full_hourly,
+                "daily_last_7": daily,
+                "unknown_count": unknown_cnt,
+                "unknown_rate": unknown_rate,
+            }
+
+        # Species-filtered path: legacy-aware Python aggregation so old
+        # scientific rows still match their common name.
+        rows = self._all_visits_legacy_aware()
+        if filt == "unknown":
+            match = [r for r in rows if _common(r["species"]) == "unknown"]
+        else:
+            match = [
+                r
+                for r in rows
+                if _common(r["species"]) == filt or _common(r["raw_species"]) == filt
+            ]
+        total = len(match)
+        confident = [r for r in match if r["is_confident"] == 1 and _common(r["species"]) != "unknown"]
+        avg_conf = sum(float(r["confidence"] or 0) for r in confident) / len(confident) if confident else 0
+        species_freq = [{"species": filt, "count": len(confident), "avg_conf": avg_conf}] if filt != "unknown" else []
+
+        hourly_map = {h: 0 for h in range(24)}
+        for r in match:
+            try:
+                h = int(str(r["timestamp"])[11:13])
+                if 0 <= h <= 23:
+                    hourly_map[h] += 1
+            except Exception:
+                pass
+        full_hourly = [{"hour": h, "count": hourly_map[h]} for h in range(24)]
+
+        from datetime import date, timedelta
+
+        days = [(date.today() - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+        day_counts = {d: 0 for d in days}
+        for r in match:
+            try:
+                d = str(r["timestamp"])[:10]
+                if d in day_counts:
+                    day_counts[d] += 1
+            except Exception:
+                pass
+        daily = [{"day": d, "count": day_counts[d]} for d in days if day_counts[d] > 0]
+
+        unknown_cnt = sum(1 for r in match if _common(r["species"]) == "unknown" or r["is_confident"] == 0)
         return {
             "total_visits": total,
             "species_frequency": species_freq,
             "hourly_distribution": full_hourly,
             "daily_last_7": daily,
             "unknown_count": unknown_cnt,
-            "unknown_rate": unknown_rate
+            "unknown_rate": (unknown_cnt / total if total > 0 else 0),
         }
 
     def get_gallery(self, species_filter=None, limit=100, offset=0) -> List[Dict]:
         cur = self.conn.cursor()
-        if species_filter and species_filter != "all":
-            cur.execute("SELECT * FROM visits WHERE species=? ORDER BY created_at DESC LIMIT ? OFFSET ?", (species_filter, limit, offset))
-        else:
+        if not species_filter or species_filter == "all":
             cur.execute("SELECT * FROM visits ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset))
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
+            rows = cur.fetchall()
+            return [_normalize_visit_row(dict(r)) for r in rows]
+        filt = _common(species_filter)
+        if filt == "unknown":
+            cur.execute(
+                "SELECT * FROM visits WHERE species='unknown' OR is_confident=0 "
+                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            rows = cur.fetchall()
+            return [_normalize_visit_row(dict(r)) for r in rows]
+        # Legacy-aware: exact SQL match first, then Python merge with
+        # raw_species-normalized rows (covers old scientific labels).
+        cur.execute("SELECT * FROM visits ORDER BY created_at DESC")
+        out = []
+        for r in cur.fetchall():
+            d = dict(r)
+            if _common(d.get("species")) == filt or _common(d.get("raw_species")) == filt:
+                out.append(_normalize_visit_row(d))
+        return out[offset : offset + limit]
 
     def delete_visit(self, visit_id):
         cur = self.conn.cursor()

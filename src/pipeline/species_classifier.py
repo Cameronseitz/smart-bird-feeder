@@ -59,12 +59,15 @@ class SpeciesClassifier:
         try:
             with open(self.labels_path, encoding="utf-8") as f:
                 raw = [l.strip() for l in f if l.strip()]
+            try:
+                from src.dashboard.names import common_name as _common
+            except Exception:
+                _common = None
             cleaned = []
             for line in raw:
                 if ":" in line and line.split(":", 1)[0].strip().isdigit():
-                    cleaned.append(line.split(":", 1)[1].strip())
-                else:
-                    cleaned.append(line)
+                    line = line.split(":", 1)[1].strip()
+                cleaned.append(_common(line) if _common else line.strip())
             self.labels = cleaned
             logger.info(f"Loaded {len(self.labels)} labels")
         except Exception as e:

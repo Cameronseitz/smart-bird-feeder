@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings - Bird Feeder{% endblock %}
+{% block title %}Settings - Seitz Sparrows{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-bold text-gray-800 mb-6">Settings & Tuning</h1>
 
@@ -130,6 +130,27 @@
         </div>
     </div>
 </div>
+
+<div class="bg-white rounded-xl shadow-lg p-6 mt-6">
+    <h3 class="font-semibold mb-1"><i class="fas fa-terminal mr-2"></i>Admin Settings — Raspberry Pi Logs</h3>
+    <p class="text-xs text-gray-500 mb-4">Read-only <code>journalctl</code> for the Pi systemd units. Manual refresh only (no auto-poll, saves Pi 3B CPU).</p>
+    <div class="flex flex-wrap items-end gap-3 mb-3">
+        <div>
+            <label class="text-xs text-gray-600">Unit</label>
+            <select id="logUnit" class="border rounded px-3 py-2 text-sm bg-white">
+                <option value="bird-feeder">bird-feeder (vision pipeline)</option>
+                <option value="bird-dashboard">bird-dashboard (Flask :5000)</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-600">Lines (50-1000)</label>
+            <input type="number" id="logLines" min="50" max="1000" step="50" value="200" class="border rounded px-3 py-2 text-sm w-28">
+        </div>
+        <button type="button" onclick="loadLogs()" class="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 text-sm"><i class="fas fa-sync-alt mr-1"></i>Refresh logs</button>
+        <span id="logStatus" class="text-xs text-gray-500"></span>
+    </div>
+    <pre id="logOut" class="bg-gray-900 text-green-300 p-4 rounded text-xs overflow-auto max-h-96 whitespace-pre-wrap">Select a unit and press Refresh logs.</pre>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -174,6 +195,25 @@ async function saveSettings(andThen){
             status.textContent += 'Restart pipeline or reboot to apply camera changes.';
         }
     } catch(e){ status.textContent = 'Error: ' + e; }
+}
+async function loadLogs(){
+    const out = document.getElementById('logOut');
+    const status = document.getElementById('logStatus');
+    const unit = document.getElementById('logUnit').value;
+    const lines = document.getElementById('logLines').value || 200;
+    status.textContent = 'Loading...';
+    out.textContent = 'Loading logs...';
+    try{
+        const res = await fetch(`/api/logs?unit=${encodeURIComponent(unit)}&lines=${encodeURIComponent(lines)}`);
+        const data = await res.json();
+        if(data.ok){
+            out.textContent = data.output || '(empty)';
+            status.textContent = `${data.service} • last ${data.lines} lines`;
+        }else{
+            out.textContent = 'Error: ' + (data.error || 'unknown') + (data.hint ? '\n' + data.hint : '');
+            status.textContent = 'Failed';
+        }
+    }catch(e){ out.textContent = 'Error: ' + e; status.textContent = 'Failed'; }
 }
 </script>
 {% endblock %}

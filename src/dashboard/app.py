@@ -24,6 +24,24 @@ CORS(app)
 db = BirdDatabase()
 
 
+@app.template_filter("short_time")
+def short_time(value):
+    """Full ISO/SQLite timestamp -> '9:29 AM' (hour + minute only)."""
+    try:
+        if value is None:
+            return ""
+        s = str(value).strip()
+        if not s:
+            return ""
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            dt = datetime.strptime(s.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        return f"{dt.hour % 12 or 12}:{dt.minute:02d} {'AM' if dt.hour < 12 else 'PM'}"
+    except Exception:
+        return str(value)
+
+
 @app.route("/")
 def index():
     stats = db.get_stats()
@@ -37,8 +55,10 @@ def gallery():
     page = int(request.args.get("page", 0))
     limit = 24
     visits = db.get_gallery(species_filter=species, limit=limit, offset=page * limit)
-    stats = db.get_stats()
-    species_list = [s["species"] for s in stats["species_frequency"]]
+    try:
+        species_list = db.distinct_species()
+    except Exception:
+        species_list = [s["species"] for s in db.get_stats()["species_frequency"]]
     return render_template(
         "gallery.html", visits=visits, species_list=species_list, current_species=species, page=page
     )
@@ -46,8 +66,13 @@ def gallery():
 
 @app.route("/analytics")
 def analytics_page():
-    stats = db.get_stats()
-    return render_template("analytics.html", stats=stats)
+    species = request.args.get("species", "all")
+    stats = db.get_stats(species_filter=species if species != "all" else None)
+    try:
+        species_list = db.distinct_species()
+    except Exception:
+        species_list = [s["species"] for s in db.get_stats()["species_frequency"]]
+    return render_template("analytics.html", stats=stats, species_list=species_list, current_species=species)
 
 
 @app.route("/settings")
@@ -77,7 +102,7 @@ def api_visits():
     return jsonify(db.get_recent_visits(limit=limit))
 
 
-@app.route("/api/visits/<int:visit_id>")
+@app.route("/api/visits/<int:visit_id>", methods=["GET"])
 def api_visit_detail(visit_id):
     visit = db.get_visit_by_id(visit_id)
     if not visit:
@@ -85,9 +110,88 @@ def api_visit_detail(visit_id):
     return jsonify(visit)
 
 
+def _safe_asset_path(rel_path):
+    """Resolve a DB-stored relative asset path, ensuring it stays inside assets/. Returns Path or None."""
+    try:
+        if not rel_path:
+            return None
+        p = (BASE_DIR / rel_path).resolve()
+        assets_root = (BASE_DIR / "assets").resolve()
+        try:
+            p.relative_to(assets_root)
+        except ValueError:
+            return None
+        return p
+    except Exception:
+        return None
+
+
+def _refresh_latest_after_delete():
+    """Point assets/latest.jpg at the next most-recent best frame, or remove it if none remain."""
+    try:
+        import shutil
+
+        best_dir = BASE_DIR / "assets" / "best"
+        latest = BASE_DIR / "assets" / "latest.jpg"
+        newest = None
+        if best_dir.exists():
+            files = sorted(
+                (p for p in best_dir.glob("*.jpg") if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            newest = files[0] if files else None
+        if newest:
+            shutil.copy(str(newest), str(latest))
+            return newest.name
+        else:
+            try:
+                if latest.exists():
+                    latest.unlink()
+            except Exception:
+                pass
+            return None
+    except Exception as e:
+        logger.error(f"latest.jpg refresh failed: {e}")
+        return None
+
+
+@app.route("/api/visits/<int:visit_id>", methods=["DELETE", "POST"])
+def api_visit_delete(visit_id):
+    # POST fallback for plain forms: require _method=delete or action=delete
+    if request.method == "POST":
+        marker = (request.args.get("_method") or request.args.get("action") or "").lower()
+        body_marker = ""
+        try:
+            body = request.get_json(force=True, silent=True) or {}
+            body_marker = str(body.get("_method") or body.get("action") or "").lower()
+        except Exception:
+            body = {}
+        form_marker = str((request.form.get("_method") or request.form.get("action") or "")).lower()
+        if marker not in ("delete", "destroy") and body_marker not in ("delete", "destroy") and form_marker not in ("delete", "destroy"):
+            return jsonify({"error": "use DELETE method (or POST with _method=delete)"}), 405
+    visit = db.get_visit_by_id(visit_id)
+    if not visit:
+        return jsonify({"error": "not found"}), 404
+    deleted_files = []
+    for key in ("best_image_path", "image_path"):
+        p = _safe_asset_path(visit.get(key))
+        if p and p.exists() and p.is_file():
+            try:
+                p.unlink()
+                deleted_files.append(str(p.relative_to(BASE_DIR)).replace("\\", "/"))
+            except Exception as e:
+                logger.error(f"Failed to delete image {p}: {e}")
+    db.delete_visit(visit_id)
+    live_refreshed = _refresh_latest_after_delete()
+    logger.info(f"Visit {visit_id} deleted files={deleted_files} live={live_refreshed}")
+    return jsonify({"ok": True, "deleted_id": visit_id, "deleted_files": deleted_files, "live_frame": live_refreshed})
+
+
 @app.route("/api/stats")
 def api_stats():
-    return jsonify(db.get_stats())
+    species = request.args.get("species", "all")
+    return jsonify(db.get_stats(species_filter=species if species != "all" else None))
 
 
 @app.route("/api/gallery")
@@ -98,9 +202,30 @@ def api_gallery():
     return jsonify(db.get_gallery(species_filter=species, limit=limit, offset=offset))
 
 
+@app.route("/visit/<int:visit_id>")
+def visit_page(visit_id):
+    from flask import abort
+
+    visit = db.get_visit_by_id(visit_id)
+    if not visit:
+        abort(404)
+    candidates = []
+    try:
+        session_id = visit.get("session_id") or ""
+        # Filenames are <timestamp>_<session_id>.jpg so substring match is safe
+        # (session_ids are generated as visit_<epoch>_<n>, no path separators).
+        if session_id and "/" not in session_id and "\\" not in session_id:
+            cap_dir = BASE_DIR / "assets" / "captures"
+            if cap_dir.exists():
+                files = sorted(cap_dir.glob(f"*{session_id}*.jpg"))
+                candidates = [f"assets/captures/{p.name}" for p in files if p.is_file()]
+    except Exception as e:
+        logger.error(f"Candidate listing failed for visit {visit_id}: {e}")
+    return render_template("visit.html", visit=visit, candidates=candidates)
+
+
 @app.route("/assets/<path:filename>")
-def serve_assets(filename):
-    return send_from_directory(str(BASE_DIR / "assets"), filename)
+def serve_assets(filename):    return send_from_directory(str(BASE_DIR / "assets"), filename)
 
 
 @app.route("/api/live/frame")
@@ -291,6 +416,62 @@ def api_reboot():
     if ok:
         return jsonify({"ok": True, "action": "reboot", "note": "Pi rebooting in ~2s; dashboard will drop."})
     return jsonify({"error": "failed to schedule reboot (sudo -n reboot?)"}), 500
+
+
+_LOG_UNITS = {
+    "bird-feeder": "bird-feeder.service",
+    "bird-dashboard": "bird-dashboard.service",
+}
+
+
+@app.route("/api/logs")
+def api_logs():
+    import shutil
+    import subprocess
+
+    unit_key = (request.args.get("unit") or "bird-feeder").strip()
+    try:
+        lines = int(request.args.get("lines", 200))
+    except (TypeError, ValueError):
+        lines = 200
+    lines = max(50, min(1000, lines))
+    if unit_key not in _LOG_UNITS:
+        return jsonify({"ok": False, "error": f"unknown unit '{unit_key}'", "units": sorted(_LOG_UNITS)}), 400
+    service = _LOG_UNITS[unit_key]
+    journalctl = shutil.which("journalctl")
+    if not journalctl:
+        return jsonify(
+            {
+                "ok": False,
+                "unit": unit_key,
+                "service": service,
+                "error": "journalctl not available on this host",
+                "hint": "Run on the Pi, or check `journalctl -u bird-feeder` / `journalctl -u bird-dashboard` via SSH.",
+            }
+        ), 200
+    try:
+        proc = subprocess.run(
+            [journalctl, "--no-pager", "-n", str(lines), "-u", service],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "unit": unit_key, "service": service, "error": "journalctl timed out after 5s"}), 504
+    except Exception as e:
+        logger.error(f"journalctl failed: {e}")
+        return jsonify({"ok": False, "unit": unit_key, "service": service, "error": "failed to read logs"}), 500
+    if proc.returncode != 0:
+        return jsonify(
+            {
+                "ok": False,
+                "unit": unit_key,
+                "service": service,
+                "error": (proc.stderr or "journalctl returned no output").strip()[-500:],
+                "hint": f"Try SSH: journalctl -u {service} --no-pager | tail -n {lines}",
+            }
+        ), 200
+    return jsonify({"ok": True, "unit": unit_key, "service": service, "lines": lines, "output": proc.stdout[-20000:]})
 
 
 @app.route("/api/health")
