@@ -13,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 import config
+from src.dashboard import timefmt
 from src.database import BirdDatabase
 
 logging.basicConfig(level=getattr(logging, config.LOG_LEVEL, logging.INFO))
@@ -27,19 +28,13 @@ db = BirdDatabase()
 @app.template_filter("short_time")
 def short_time(value):
     """Full ISO/SQLite timestamp -> '9:29 AM' (hour + minute only)."""
-    try:
-        if value is None:
-            return ""
-        s = str(value).strip()
-        if not s:
-            return ""
-        try:
-            dt = datetime.fromisoformat(s)
-        except ValueError:
-            dt = datetime.strptime(s.split(".")[0], "%Y-%m-%d %H:%M:%S")
-        return f"{dt.hour % 12 or 12}:{dt.minute:02d} {'AM' if dt.hour < 12 else 'PM'}"
-    except Exception:
-        return str(value)
+    return timefmt.short_time(value)
+
+
+@app.template_filter("short_datetime")
+def short_datetime(value):
+    """Full ISO/SQLite timestamp -> '9:29 AM 10/06' (time then MM/DD date)."""
+    return timefmt.short_datetime(value)
 
 
 @app.route("/")
