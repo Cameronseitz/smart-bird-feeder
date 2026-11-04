@@ -225,6 +225,14 @@ class BirdDatabase:
             """)
             daily = [dict(r) for r in cur.fetchall()]
 
+            # daily last 30 days (parallel to last-7, same sparse shape)
+            cur.execute("""
+                SELECT date(timestamp) as day, COUNT(*) as count
+                FROM visits WHERE timestamp >= date('now','-30 days')
+                GROUP BY day ORDER BY day
+            """)
+            daily_30 = [dict(r) for r in cur.fetchall()]
+
             # unknown rate
             cur.execute("SELECT COUNT(*) as unknown_cnt FROM visits WHERE species='unknown' OR is_confident=0")
             unknown_cnt = cur.fetchone()["unknown_cnt"]
@@ -235,6 +243,7 @@ class BirdDatabase:
                 "species_frequency": species_freq,
                 "hourly_distribution": full_hourly,
                 "daily_last_7": daily,
+                "daily_last_30": daily_30,
                 "unknown_count": unknown_cnt,
                 "unknown_rate": unknown_rate,
             }
@@ -278,12 +287,24 @@ class BirdDatabase:
                 pass
         daily = [{"day": d, "count": day_counts[d]} for d in days if day_counts[d] > 0]
 
+        days_30 = [(date.today() - timedelta(days=i)).isoformat() for i in range(29, -1, -1)]
+        day_counts_30 = {d: 0 for d in days_30}
+        for r in match:
+            try:
+                d = str(r["timestamp"])[:10]
+                if d in day_counts_30:
+                    day_counts_30[d] += 1
+            except Exception:
+                pass
+        daily_30 = [{"day": d, "count": day_counts_30[d]} for d in days_30 if day_counts_30[d] > 0]
+
         unknown_cnt = sum(1 for r in match if _common(r["species"]) == "unknown" or r["is_confident"] == 0)
         return {
             "total_visits": total,
             "species_frequency": species_freq,
             "hourly_distribution": full_hourly,
             "daily_last_7": daily,
+            "daily_last_30": daily_30,
             "unknown_count": unknown_cnt,
             "unknown_rate": (unknown_cnt / total if total > 0 else 0),
         }

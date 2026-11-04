@@ -41,7 +41,7 @@
                             <span class="font-medium text-gray-900">{{ v.species }}</span>
                             <span class="text-xs px-2 py-1 rounded-full {% if v.is_confident %}bg-green-100 text-green-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">{{ "%.0f"|format(v.confidence*100) }}%</span>
                         </div>
-                        <div class="text-xs text-gray-500">{{ v.timestamp|short_time }} • {{ v.duration_sec|round(1) }}s visit • {{ v.num_candidates }} frames</div>
+                        <div class="text-xs text-gray-500">{{ v.timestamp|short_datetime }} • {{ v.duration_sec|round(1) }}s visit • {{ v.num_candidates }} frames</div>
                         <div class="text-xs text-gray-400 truncate">sharp {{ v.sharpness|round(1) }}</div>
                     </div>
                 </div>
