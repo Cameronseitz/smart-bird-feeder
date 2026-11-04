@@ -70,7 +70,7 @@
                 <div>
                     <label class="text-sm text-gray-600">Lens position (blank = auto)</label>
                     <input type="number" id="lensPos" step="0.5" min="0" max="15" placeholder="auto" value="{{ config.camera_lens_position if config.camera_lens_position is not none else '' }}" class="w-full border rounded px-3 py-2">
-                    <p class="text-xs text-gray-400 mt-1">Fixed perch distance lock. Calibrate via rpicam-hello.</p>
+                    <p class="text-xs text-gray-400 mt-1">7in rig: set Focus mode 0 manual + calibrated lens value, then Save + Restart pipeline. Testing note: 6.0 was best during testing. Calibrate: <code>venv/bin/python scripts/test_camera.py --calibrate-lens</code> (no birds needed). Revert: mode 2 + blank.</p>
                 </div>
             </div>
             <div>

@@ -30,7 +30,12 @@ CAMERA_AF_SPEED = 1
 # after verifying with rpicam-hello --autofocus-windows.
 CAMERA_AF_WINDOWS = None
 # Manual focus override: None=autofocus, else dioptre e.g. 6.0.
+# 7" rig intent: lock to calibrated 7" plane as default (continuous AF is
+# fallback only — full-frame AF hunts to background trees/fence at 127-178mm).
 # Calibrate with: rpicam-hello --autofocus-mode manual --lens-position X
+# sweep 2.0-9.0 step 0.5, or: venv/bin/python scripts/test_camera.py --calibrate-lens
+# then set via Settings page (writes config_overrides.json, restart to apply).
+# Keep EV default 0.6 here; Pi override 1.2 kept for now (birds too dark below it).
 CAMERA_LENS_POSITION = None
 # AeMeteringMode: 0=centre-weighted, 1=spot, 2=matrix. Centre/spot exposes
 # the bird, not the bright background (silhouette fix).

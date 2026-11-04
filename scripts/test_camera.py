@@ -138,9 +138,68 @@ def focus_sweep():
         cam.close()
 
 
+def calibrate_lens():
+    """Lens-position sweep at the fixed 7in perch plane (no birds needed).
+
+    Tape-mark 7in, place printed feather-detail card there in outdoor daylight,
+    leave the camera untouched, then run:
+        venv/bin/python scripts/test_camera.py --calibrate-lens
+    Sweeps LensPosition 2.0-9.0 step 0.5 with AfMode=0 manual, captures one
+    frame per step, logs Laplacian sharpness, saves cal_7in_XpX.jpg.
+    Pick max sharpness + readable barbs; keep top-2. Set via Settings page
+    (Focus mode 0 manual + Lens position X) -> Save + Restart pipeline.
+    Revert: Focus mode 2 continuous + blank lens position.
+    """
+    from picamera2 import Picamera2
+    import time
+    import cv2
+    picam2 = Picamera2()
+    base = {
+        "FrameRate": float(config.CAMERA_FPS),
+        "AeMeteringMode": config.CAMERA_AE_METERING_MODE,
+        "AeExposureMode": config.CAMERA_AE_EXPOSURE_MODE,
+        "ExposureValue": float(config.CAMERA_EXPOSURE_VALUE),
+        "AfMode": 0,
+    }
+    cfg = picam2.create_still_configuration(
+        main={"size": (1920, 1080)}, lores={"size": (640, 480)},
+        controls=base,
+    )
+    picam2.configure(cfg)
+    picam2.start()
+    time.sleep(2.0)
+    results = []
+    try:
+        steps = [round(x * 0.5, 1) for x in range(4, 19)]  # 2.0-9.0
+        for pos in steps:
+            try:
+                picam2.set_controls({"AfMode": 0, "LensPosition": float(pos)})
+            except Exception as e:
+                logger.warning(f"LensPosition {pos} rejected: {e}")
+                continue
+            time.sleep(0.8)  # let manual focus + AEC settle
+            arr = picam2.capture_array("main")
+            s = sharpness_of(arr)
+            name = f"cal_7in_{str(pos).replace('.', 'p')}.jpg"
+            cv2.imwrite(str(BASE_DIR / name), arr)
+            logger.info(f"lens {pos:.1f}: sharpness={s:.1f} saved {name}")
+            results.append((pos, s))
+    finally:
+        try:
+            picam2.stop()
+        except Exception:
+            pass
+    results.sort(key=lambda t: t[1], reverse=True)
+    if results:
+        top = ", ".join(f"{p:.1f} ({s:.0f})" for p, s in results[:3])
+        logger.info(f"Top lens positions (pos/sharp): {top} — verify barbs visually, keep top-2")
+
+
 if __name__ == "__main__":
     print("=== Pi Camera Module 3 Test ===")
-    if "--sweep" in sys.argv:
+    if "--calibrate-lens" in sys.argv:
+        calibrate_lens()
+    elif "--sweep" in sys.argv:
         focus_sweep()
     else:
         ok1 = test_picamera2_direct()

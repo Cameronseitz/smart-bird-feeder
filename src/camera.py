@@ -89,6 +89,11 @@ class CameraInterface:
                 except Exception as ke:
                     logger.warning(f"Control {k} unsupported: {ke}")
         time.sleep(2.0)  # let AF + AEC settle
+        if controls.get("AfMode") == 0 and "LensPosition" in controls:
+            logger.info(
+                "Picamera2 manual focus lock active "
+                f"(LensPosition={controls['LensPosition']}) — 7in perch plane"
+            )
         logger.info(f"Picamera2 {self.width}x{self.height} @{self.fps}fps controls={controls}")
         self.backend = "picamera2"
 
